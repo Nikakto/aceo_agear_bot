@@ -7,7 +7,6 @@ import win32con
 import win32gui
 import win32process
 
-from aceo_bot.client.objects import Environment
 from aceo_bot.client.objects import MobsTree
 from aceo_bot.client.objects import Player
 from aceo_bot.client.objects import Target
@@ -16,7 +15,6 @@ from aceo_bot.memory import ProcessReader
 
 
 class AceOnlineClient(ProcessReader):
-    environment: Environment = None
     mobs_list: MobsTree = None
     status_bar: StatusBar = None
     player: Player = None
@@ -32,7 +30,6 @@ class AceOnlineClient(ProcessReader):
         super(AceOnlineClient, self).__init__(pid)
         self.safe_read = safe_read
 
-        self.environment = Environment(self, update_on_create=False)
         self.mobs_list = MobsTree(self, update_on_create=False)
         self.status_bar = StatusBar(self, update_on_create=False)
         self.player = Player(self, update_on_create=False)
@@ -52,7 +49,7 @@ class AceOnlineClient(ProcessReader):
         return cls(pid=hwnd_pid, safe_read=safe_read)
 
     @staticmethod
-    def send_keyboard(key: str, delay=0.1):
+    def send_keyboard(key: str, delay=0.25):
         pydirectinput.keyDown(key, _pause=False)
         time.sleep(delay)
         pydirectinput.keyUp(key, _pause=False)

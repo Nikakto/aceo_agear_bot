@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from aceo_bot.client.objects import Object
 
 
-BOT_ATTACK_RANGE = 1400
+BOT_ATTACK_RANGE = 1650
 BOT_ATTACK_RANGE_AGRO = 1650
 BOT_ATTACK_PRIORITY = [
     ["NGC Scout"],
@@ -26,6 +26,7 @@ BOT_ATTACK_IGNORE_TEMP: dict[int, datetime.datetime] = dict()
 BOT_ATTACK_IGNORE_TEMP_TIME: int = 2
 BOT_ATTACK_IGNORE_TEMP_TIME_COUNTER: defaultdict[int, int] = defaultdict(int)
 BOT_ATTACK_IGNORE = ["Uruk", "NGC Research Probe"]
+BOT_ATTACK_MAX_AGRO = 100
 
 BOT_ENERGY_MIN_RATE = 1
 BOT_SHIELD_MIN_RATE = 0.75
@@ -70,7 +71,11 @@ def target_get(client: "AceOnlineClient", is_agro=False, in_distance=False) -> O
             obj
             for obj in client.mobs_list.items
             if obj.name
-            and (obj.name not in BOT_ATTACK_IGNORE or obj.is_agro)
+            and (
+                obj.name not in BOT_ATTACK_IGNORE
+                or obj.is_agro
+                or (obj.name == "NGC Research Probe" and client.player.distance_to(obj) < 300)
+            )
             and obj.id not in BOT_ATTACK_IGNORE_TEMP
             and obj.health
             and (not is_agro or obj.is_agro)
@@ -81,7 +86,11 @@ def target_get(client: "AceOnlineClient", is_agro=False, in_distance=False) -> O
     )
 
     # [print(hex(target.address), target.name, *_target_key(client, target)) for target in targets]
-    return targets and targets[0]
+    target = targets[0] if targets else None
+    can_agro_more = len([mob for mob in client.mobs_list.items if mob.is_agro]) < BOT_ATTACK_MAX_AGRO
+    if target and (target.is_agro or (not target.is_agro and can_agro_more)):
+        return target
+    return None
 
 
 def target_is_in_distance(client, obj):
@@ -111,6 +120,9 @@ def run():
     win32gui.SetForegroundWindow(client.hwnd)
     time.sleep(1)
 
+    kit_energy_using = False
+    kit_shield_using = False
+    kit_sp_used_using = False
     skill_remedy_timeout: datetime.datetime = datetime.datetime.min
     target_health_prev: float = 0
     target_prev: Optional[int] = None
@@ -150,29 +162,32 @@ def run():
 
             active_skills = [effect.skill.name for effect in client.status_bar.effects if effect.skill]
 
-            shoot_only_agro = datetime.datetime.now() < weapon_standard_cooling_until
-            can_shoot = (client.player.target and client.player.target.is_agro) or not shoot_only_agro
-            ignored = client.player.target and (
-                client.player.target.id in BOT_ATTACK_IGNORE_TEMP or client.player.target.name in BOT_ATTACK_IGNORE
-            )
-
             if not client.player.target:
                 target_prev = None
 
-            if client.player.energy < client.player.energy_max * BOT_ENERGY_MIN_RATE:
+            if client.player.energy_max * BOT_ENERGY_MIN_RATE < client.player.energy:
+                if kit_energy_using:
+                    pydirectinput.keyUp(BOT_KEYBOARD_ENERGY_KIT, _pause=False)
+                    kit_energy_using = False
+            elif not kit_energy_using:
                 pydirectinput.keyDown(BOT_KEYBOARD_ENERGY_KIT, _pause=False)
-            else:
-                pydirectinput.keyUp(BOT_KEYBOARD_ENERGY_KIT, _pause=False)
+                kit_energy_using = True
 
-            if client.player.shield < client.player.shield_max * BOT_SHIELD_MIN_RATE:
+            if client.player.shield_max * BOT_SHIELD_MIN_RATE < client.player.shield:
+                if kit_shield_using:
+                    pydirectinput.keyUp(BOT_KEYBOARD_SHIELD_KIT, _pause=False)
+                    kit_shield_using = False
+            elif not kit_shield_using:
                 pydirectinput.keyDown(BOT_KEYBOARD_SHIELD_KIT, _pause=False)
-            else:
-                pydirectinput.keyUp(BOT_KEYBOARD_SHIELD_KIT, _pause=False)
+                kit_shield_using = True
 
-            if client.player.sp < client.player.sp_max * BOT_SP_MIN_RATE:
+            if client.player.sp_max * BOT_SP_MIN_RATE < client.player.sp:
+                if kit_sp_used_using:
+                    pydirectinput.keyUp(BOT_KEYBOARD_SP_KIT, _pause=False)
+                    kit_sp_used_using = False
+            elif not kit_sp_used_using:
                 pydirectinput.keyDown(BOT_KEYBOARD_SP_KIT, _pause=False)
-            else:
-                pydirectinput.keyUp(BOT_KEYBOARD_SP_KIT, _pause=False)
+                kit_sp_used_using = True
 
             no_agro_targets = not target_get(client, is_agro=True, in_distance=True)
             if required_ammunition := client.player.weapon_standard.ammunition < 250 and no_agro_targets:
@@ -206,7 +221,10 @@ def run():
             if buff_used:
                 client.update()
 
-            if client.player.weapon_standard.is_overheated:
+            near_to_overheat = client.player.weapon_standard.overheat < 15 and (
+                client.player.target and client.player.weapon_standard.overheat * 2000 < client.player.target.health
+            )
+            if client.player.weapon_standard.is_overheated or near_to_overheat:
                 if "Siege Mode" in active_skills:
                     print(datetime.datetime.now().isoformat(), 'Deactivate "Siege Mode"')
                     client.send_keyboard(KEY_SIEGE_MODE)
@@ -220,6 +238,20 @@ def run():
                 time.sleep(BOT_TICK_TIME)
                 continue
 
+            shoot_only_agro = datetime.datetime.now() < weapon_standard_cooling_until
+            can_shoot = (client.player.target and client.player.target.is_agro) or not shoot_only_agro
+            ignored = client.player.target and (
+                client.player.target.id in BOT_ATTACK_IGNORE_TEMP
+                or (
+                    client.player.target.name in BOT_ATTACK_IGNORE
+                    and not client.player.target.is_agro
+                    and not (
+                        client.player.target.name == "NGC Research Probe"
+                        and client.player.distance_to(client.player.target) < 300
+                    )
+                )
+            )
+
             if client.player.target and can_shoot and not ignored:
                 if client.player.target.id != target_prev:
                     print(datetime.datetime.now(), f"Target changed from {target_prev} to {client.player.target.id}")
@@ -227,6 +259,7 @@ def run():
                     target_last_attack = None
                 elif client.player.target.health < target_health_prev:
                     target_last_attack = datetime.datetime.now()
+                    BOT_ATTACK_IGNORE_TEMP_TIME_COUNTER[client.player.target.id] = 0
                 elif not target_last_attack:
                     print(
                         datetime.datetime.now(),

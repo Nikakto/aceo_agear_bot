@@ -191,31 +191,6 @@ class PlayerWeaponAdvanced(PlayerWeapon):
                     ]
 
 
-class Environment(IngameStaticStructure):
-    client_module = "ACEonline.atm"
-    data_size = 0xBC
-    offsets = [0x54DF20, 0x2C63C]
-
-    objects: list[Object]
-
-    def __init__(self, client: "AceOnlineClient", address: int = 0, *, update_on_create=False):
-        super(Environment, self).__init__(client, address, update_on_create=update_on_create)
-        self.list = []
-
-    def update(self):
-        super(Environment, self).update()
-
-        if self.data:
-            address_start = self.get_data_int32(self.data, 0xB4)
-            address_end = self.get_data_int32(self.data, 0xB8)
-
-            objects_data = self.client.read_bytes(address_start, address_end - address_start)
-            self.objects = [
-                Object(self.client, self.get_data_int32(objects_data, offset), update_on_create=True)
-                for offset in range(0, address_end - address_start, self.client.WORD_SIZE)
-            ]
-
-
 class MobsTree(IngameStaticStructure):
     client_module = "ACEonline.atm"
     data_size = 0xA8
