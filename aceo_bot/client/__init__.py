@@ -73,7 +73,6 @@ class AceOnlineClient(ProcessReader):
             self.psutil_process.suspend()
 
         try:
-            self.environment.update()
             self.mobs_list.update()
             self.status_bar.update()
             self.player.update()
