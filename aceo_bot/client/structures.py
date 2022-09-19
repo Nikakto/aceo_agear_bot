@@ -3,6 +3,7 @@ import os
 import struct
 from typing import Optional
 from typing import TYPE_CHECKING
+from typing import Type
 
 import pywintypes
 import win32process
@@ -16,7 +17,7 @@ if TYPE_CHECKING:
 
 class IngameStructure(abc.ABC):
     address: int = 0
-    data: bytes
+    data: bytes = b""
     data_size: int
     client: "AceOnlineClient"
 
@@ -32,6 +33,9 @@ class IngameStructure(abc.ABC):
 
         if update_on_create:
             self.update()
+
+    def __eq__(self, other: "IngameStructure"):
+        return self.address == other.address
 
     @staticmethod
     def get_data_byte(data: bytes, pos: int, signed: bool = False) -> int:
@@ -101,3 +105,44 @@ class IngameStaticStructure(IngameStructure):
         address = self.client_module_address + self.offsets[0]
         self.address = self.client.read_value_from_pointers(address, offsets=self.offsets[1:])
         super(IngameStaticStructure, self).update()
+
+
+class IngameTree(IngameStructure):
+    item: Type[IngameStructure]
+
+    address_tree_node_end_offsets: tuple[str, int]
+    address_tree_node_end: int = 0
+    items: list
+
+    def __init__(self, client: "AceOnlineClient", address: int = 0, *, update_on_create=False):
+        self.items = []
+        super(IngameTree, self).__init__(client, address, update_on_create=update_on_create)
+
+    def get_address_tree_node_end(self) -> Optional[int]:
+        module_name, offset = self.address_tree_node_end_offsets
+        pointer_tree_node_end = IngameStaticStructure.get_module_address(self.client, module_name) + offset
+        return self.client.read_int32(pointer_tree_node_end)
+
+    def get_item(self, address):
+        return self.item(self.client, address, update_on_create=True)
+
+    def update(self):
+        super(IngameTree, self).update()
+
+        self.address_tree_node_end = self.get_address_tree_node_end()
+        self.items.clear()
+
+        if self.data and self.address_tree_node_end:
+            leafs_to_read = {self.address}
+            leafs_payloads = {self.address: None, self.address_tree_node_end: None}
+
+            while leafs_to_read:
+                address = leafs_to_read.pop()
+                leaf_data = self.client.read_bytes(address, 0x14)
+                leafs_payloads[address] = self.get_data_int32(leaf_data, 0x10)
+
+                leaf_child = {_address for index in range(3) if (_address := self.get_data_int32(leaf_data, index * 4))}
+                leafs_to_read.update(leaf_child)
+                leafs_to_read -= set(leafs_payloads)
+
+            self.items = [self.get_item(address) for address in leafs_payloads.values() if address]

@@ -7,6 +7,9 @@ import win32con
 import win32gui
 import win32process
 
+from aceo_bot.client.gui import GUI
+from aceo_bot.client.gui.inventory import WindowInventory
+from aceo_bot.client.inventory import Inventory
 from aceo_bot.client.objects import MobsTree
 from aceo_bot.client.objects import Player
 from aceo_bot.client.objects import Target
@@ -19,8 +22,11 @@ class AceOnlineClient(ProcessReader):
     status_bar: StatusBar = None
     player: Player = None
 
+    inventory: Inventory = None
     last_update: datetime.datetime = None
     last_update_time_passed: float = None
+    gui: GUI = None
+
     window_x: int = 0
     window_y: int = 0
     window_width: int = 0
@@ -30,6 +36,8 @@ class AceOnlineClient(ProcessReader):
         super(AceOnlineClient, self).__init__(pid)
         self.safe_read = safe_read
 
+        self.gui = GUI(self, update_on_create=False)
+        self.inventory = Inventory(self, update_on_create=False)
         self.mobs_list = MobsTree(self, update_on_create=False)
         self.status_bar = StatusBar(self, update_on_create=False)
         self.player = Player(self, update_on_create=False)
@@ -58,6 +66,16 @@ class AceOnlineClient(ProcessReader):
         # win32api.SetCursorPos((x, y))
         pydirectinput.moveTo(x, y)
 
+    def send_mouse_double_click(self, x: int = None, y: int = None):
+        flags, hcursor, (mouse_x, mouse_y) = win32gui.GetCursorInfo()
+        pydirectinput.click(x or mouse_x, y or mouse_y)
+        time.sleep(0.1)
+        pydirectinput.click(x or mouse_x, y or mouse_y)
+
+    def send_mouse_scroll(self, rows: int, x: int = None, y: int = None):
+        flags, hcursor, (mouse_x, mouse_y) = win32gui.GetCursorInfo()
+        win32api.mouse_event(win32con.MOUSEEVENTF_WHEEL, x or mouse_x, y or mouse_y, -rows, 0)
+
     @staticmethod
     def send_mouse_right_click(x=None, y=None, delay=0.01):
         flags, hcursor, (mouse_x, mouse_y) = win32gui.GetCursorInfo()
@@ -73,6 +91,8 @@ class AceOnlineClient(ProcessReader):
             self.psutil_process.suspend()
 
         try:
+            self.gui.update()
+            self.inventory.update()
             self.mobs_list.update()
             self.status_bar.update()
             self.player.update()

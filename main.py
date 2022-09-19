@@ -9,6 +9,8 @@ import win32gui
 from pynput import keyboard
 
 from aceo_bot.client import AceOnlineClient
+from aceo_bot.client.inventory import Item
+from aceo_bot.client.inventory import WeaponStandard
 
 if TYPE_CHECKING:
     from aceo_bot.client.objects import Object
@@ -46,6 +48,107 @@ BOT_KEYBOARD_BUFFS = {
     "Fire Shot": "9",
     "Concentration": "0",
 }
+
+BOT_WEAPONS_STANDARD = [
+    "\mDark Big Smash\m",
+    "\yAir Musket II\y",
+]
+
+# def weapon_standard_get_with_full_ammunition(client: "AceOnlineClient") -> Optional[WeaponStandard]:
+#     weapons = (item for item in client.inventory.items if isinstance(item, WeaponStandard) and item.ammunition >= 3000)
+#     return next(weapons, None)
+
+
+# def inventory_use_item(client: "AceOnlineClient", item: Item):
+#     (
+#         inventory_items_x,
+#         inventory_items_y,
+#         inventory_items_x_end,
+#         inventory_items_y_end,
+#     ) = client.gui.inventory.window.items_rect
+#     flags, hcursor, (mouse_x, mouse_y) = win32gui.GetCursorInfo()
+#
+#     mouse_x_in_inventory_items = inventory_items_x < mouse_x < inventory_items_x_end
+#     mouse_y_in_inventory_items = inventory_items_y < mouse_y < inventory_items_y_end
+#
+#     if client.gui.item_focused and client.gui.item_focused.address == item.address:
+#         client.send_mouse_double_click()
+#
+#     elif item.address in [cell.item.address for cell in client.gui.inventory.items]:
+#         search = (index for index, cell in enumerate(client.gui.inventory.items) if cell.item.address == item.address)
+#         cell_index = next(search)
+#
+#         item_x_center = inventory_items_x + 32 * (cell_index % 10) + 16
+#         item_y_center = inventory_items_y + 32 * (cell_index // 10) + 16
+#
+#         client.send_mouse_move(item_x_center, item_y_center)
+#
+#     # find required row
+#     elif client.gui.inventory.window.is_open and mouse_x_in_inventory_items and mouse_y_in_inventory_items:
+#         pass
+
+
+def inventory_item_use(client: "AceOnlineClient", item: Item):
+    print(
+        client.gui.inventory.window.items.row,
+        client.gui.inventory.window.x,
+        client.gui.inventory.window.items.rect_y_start,
+    )
+
+    while client.gui.inventory.window.items.row != 0:
+        (
+            inventory_items_x,
+            inventory_items_y,
+            inventory_items_x_end,
+            inventory_items_y_end,
+        ) = client.gui.inventory.window.items_rect
+
+        x = int(inventory_items_x + (inventory_items_x_end - inventory_items_x) / 2)
+        y = int(inventory_items_y + (inventory_items_y_end - inventory_items_y) / 2)
+        client.send_mouse_move(x, y)
+        time.sleep(0.1)
+        client.send_mouse_scroll(-1)
+        client.update()
+        time.sleep(0.1)
+
+    while item.address not in [cell.item.address for cell in client.gui.inventory.items]:
+        cells_showed = 70 + 10 * client.gui.inventory.window.items.row + client.gui.inventory.fitted_count
+        if len(client.inventory.items) - cells_showed < 0:
+            return
+
+        (
+            inventory_items_x,
+            inventory_items_y,
+            inventory_items_x_end,
+            inventory_items_y_end,
+        ) = client.gui.inventory.window.items_rect
+
+        x = int(inventory_items_x + (inventory_items_x_end - inventory_items_x) / 2)
+        y = int(inventory_items_y + (inventory_items_y_end - inventory_items_y) / 2)
+        client.send_mouse_move(x, y)
+        time.sleep(0.1)
+
+        client.send_mouse_scroll(1)
+        time.sleep(0.1)
+        client.update()
+
+    search = (index for index, cell in enumerate(client.gui.inventory.items) if cell.item.address == item.address)
+    if (cell_index := next(search, None)) is not None:
+        inventory_items_x, inventory_items_y, *_ = client.gui.inventory.window.items_rect
+
+        item_x_center = inventory_items_x + 32 * (cell_index % 10) + 16
+        item_y_center = inventory_items_y + 32 * (cell_index // 10) + 16
+
+        client.send_mouse_move(item_x_center, item_y_center)
+        time.sleep(0.1)
+        client.update()
+
+        if client.gui.item_focused and client.gui.item_focused.address == item.address:
+            client.send_mouse_double_click()
+        else:
+            return
+
+        client.update()
 
 
 def _target_key(client: "AceOnlineClient", obj: "Object"):
@@ -165,6 +268,45 @@ def run():
             if not client.player.target:
                 target_prev = None
 
+            if client.player.weapon_standard.ammunition == 0:
+                if client.player.weapon_standard_is_shooting:
+                    pydirectinput.mouseUp(_pause=False)
+
+                weapons_with_full_ammunition = sorted(
+                    [
+                        item
+                        for item in client.inventory.items
+                        if isinstance(item, WeaponStandard)
+                        and item.name in BOT_WEAPONS_STANDARD
+                        and item.ammunition > 3000
+                    ],
+                    key=lambda x: x.address,
+                )
+
+                if "Siege Mode" in active_skills:
+                    client.send_keyboard(KEY_SIEGE_MODE)
+                elif weapons_with_full_ammunition:
+                    if "Siege Mode" in active_skills:
+                        client.send_keyboard(KEY_SIEGE_MODE)
+                    elif client.gui.inventory.window.is_open:
+                        print(datetime.datetime.now().isoformat(), f"Use item {weapons_with_full_ammunition[0].name}")
+                        inventory_item_use(client, weapons_with_full_ammunition[0])
+                    else:
+                        print(datetime.datetime.now().isoformat(), f"Open inventory")
+                        client.send_keyboard("i")
+                else:
+                    print(datetime.datetime.now().isoformat(), "No guns with full ammunition. Stop")
+                    running = False
+
+                time.sleep(BOT_TICK_TIME)
+                continue
+
+            elif client.gui.inventory.window.is_open:
+                print(datetime.datetime.now().isoformat(), f"Close inventory")
+                client.send_keyboard("i")
+                time.sleep(BOT_TICK_TIME)
+                continue
+
             if client.player.energy_max * BOT_ENERGY_MIN_RATE < client.player.energy:
                 if kit_energy_using:
                     pydirectinput.keyUp(BOT_KEYBOARD_ENERGY_KIT, _pause=False)
@@ -189,14 +331,9 @@ def run():
                 pydirectinput.keyDown(BOT_KEYBOARD_SP_KIT, _pause=False)
                 kit_sp_used_using = True
 
-            no_agro_targets = not target_get(client, is_agro=True, in_distance=True)
-            if required_ammunition := client.player.weapon_standard.ammunition < 250 and no_agro_targets:
-                print(datetime.datetime.now().isoformat(), f"Require ammunition. Stop")
-
-            if required_sp := client.player.sp < 50:
+            if client.player.sp < 50:
                 print(datetime.datetime.now().isoformat(), f"Require sp. Stop")
 
-            if required_ammunition or required_sp:
                 if client.player.weapon_standard_is_shooting:
                     pydirectinput.mouseUp(_pause=False)
 
@@ -418,6 +555,91 @@ if __name__ == "__main__":
 
     # client = AceOnlineClient.get()
     # win32gui.SetForegroundWindow(client.hwnd)
-    # time.sleep(1)
-    # pydirectinput.moveTo(800, 800)
-    # pydirectinput.mouseDown()
+    # time.sleep(0.5)
+    # client.update()
+
+    # weapons = [
+    #     item
+    #     for item in client.inventory.items
+    #     if isinstance(item, WeaponStandard)
+    #     # and item.name == "\mDark Big Smash\m"
+    #     # and item.address != client.gui.inventory.fitted.weapon_standard.item.address
+    # ]
+
+    # print([i.name for i in weapons])
+
+    # print(hex(client.gui.inventory.fitted.weapon_standard.item.address), [hex(a.address) for a in weapons])
+    # while weapons and (weapon := weapons.pop()):
+    #     print(f"Change {hex(client.gui.inventory.fitted.weapon_standard.item.address)} to {hex(weapon.address)}...")
+    #     inventory_item_use(client, weapon)
+    #     client.update()
+    #     print(f"Now fitted is {hex(client.gui.inventory.fitted.weapon_standard.item.address)}")
+    #     time.sleep(1)
+
+    # print("safe_read", client.safe_read)
+    # client.update()
+
+    # target_item = "Killmark of Arlington Governor"
+    #
+    # while True:
+    #     x1, y1, x2, y2 = client.gui.inventory.display.items_rect
+    #
+    #     print(
+    #         len(client.inventory.items), len(client.inventory.items) - 70 - 10 * client.gui.inventory.display.items.row
+    #     )
+    #
+    #     for cell in client.gui.inventory.storage:
+    #         print(cell.item.name)
+    #
+    #     search = (
+    #         (index, cell) for index, cell in enumerate(client.gui.inventory.storage) if cell.item.name == target_item
+    #     )
+    #     cell_index, item = next(search, (None, None))
+    #
+    #     if cell_index:
+    #         client.send_mouse_move(x1 + 32 * (cell_index % 10) + 16, y1 + 32 * (cell_index // 10) + 16)
+    #         print("Found!", cell_index)
+    #
+    #         time.sleep(0.1)
+    #         print(client.gui.item_focused.address)
+    #
+    #         break
+    #
+    #     cells_below = 70 - 10 * client.gui.inventory.display.items.row - client.gui.inventory.fitted_count
+    #     if len(client.inventory.items) - cells_below < 0:
+    #         print("Not found. Exit")
+    #         break
+    #
+    #     client.send_mouse_move(x1 + int((x2 - x1) / 2), y1 + int((y2 - y1) / 2))
+    #     client.send_mouse_scroll(1)
+    #     client.update()
+    #     time.sleep(0.1)
+
+    # print(client.gui.inventory.display.items_rect)
+    # x1, y1, x2, y2 = client.gui.inventory.display.items_rect
+    # pydirectinput.moveTo(x1, y1)
+    # time.sleep(0.1)
+    # pydirectinput.moveTo(x2, y1)
+    # time.sleep(0.1)
+    # pydirectinput.moveTo(x2, y2)
+    # time.sleep(0.1)
+    # pydirectinput.moveTo(x1, y2)
+
+    # win32gui.SetForegroundWindow(client.hwnd)
+    #
+    # window_x, window_y, window_width, window_height = win32gui.GetWindowRect(client.hwnd)
+    # caption_height = win32api.GetSystemMetrics(win32con.SM_CYCAPTION)
+    # border_y = win32api.GetSystemMetrics(win32con.SM_CYBORDER)
+    # border_x = win32api.GetSystemMetrics(win32con.SM_CXBORDER)
+    # print(
+    #     win32gui.GetWindowRect(client.hwnd),
+    #     win32gui.GetClientRect(client.hwnd),
+    #     win32api.GetSystemMetrics(win32con.SM_CYCAPTION),
+    #     win32api.GetSystemMetrics(win32con.SM_CYFRAME),
+    # )
+    #
+    # pydirectinput.moveTo(window_x + border_x + 564 + 26 + 32, window_y + caption_height + border_y + 467 + 1)
+    # time.sleep(0.5)
+    # pydirectinput.moveTo(window_x + border_x + 935 - 26 + 1, window_y + caption_height + border_y + 467 + 1)
+    # time.sleep(0.5)
+    # pydirectinput.moveTo(window_x + border_x + 935 - 26 + 1, window_y + caption_height + border_y + 652 + 1)
