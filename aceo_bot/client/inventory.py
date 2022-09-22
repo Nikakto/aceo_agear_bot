@@ -10,8 +10,9 @@ if TYPE_CHECKING:
 
 
 class Item(IngameStructure):
-    data_size: int = 0x28
+    data_size: int = 0x44
 
+    inventory_slot_index: int = 0
     is_equipped: bool = False
     type: "ItemType" = None
     type_id: int = None
@@ -29,17 +30,17 @@ class Item(IngameStructure):
     def update(self):
         super(Item, self).update()
         if self.data:
+            self.inventory_slot_index = self.get_data_int32(self.data, 0x30)
             self.is_equipped = bool(self.get_data_int16(self.data, 0x28))
             self.type_id = self.get_data_int32(self.data, 0x08)
             self.type = ItemType(self.type_id)
-            self.is_equipped = self.get_data_byte_bool(self.data, 0x20)
 
             if address_name := self.get_data_int32(self.data, 0x1C):
                 self.name = self.client.read_str_to_end(address_name + 0x05)
 
 
 class WeaponStandard(Item):
-    data_size = 0x30
+    data_size = max(Item.data_size, 0x30)
 
     ammunition: int = 0
 
