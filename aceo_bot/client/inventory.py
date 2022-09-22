@@ -29,6 +29,7 @@ class Item(IngameStructure):
     def update(self):
         super(Item, self).update()
         if self.data:
+            self.is_equipped = bool(self.get_data_int16(self.data, 0x28))
             self.type_id = self.get_data_int32(self.data, 0x08)
             self.type = ItemType(self.type_id)
             self.is_equipped = self.get_data_byte_bool(self.data, 0x20)
