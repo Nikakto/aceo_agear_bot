@@ -7,6 +7,7 @@ import win32con
 import win32gui
 import win32process
 
+from aceo_bot.client.engine import Engine
 from aceo_bot.client.gui import GUI
 from aceo_bot.client.gui.inventory import WindowInventory
 from aceo_bot.client.inventory import Inventory
@@ -22,6 +23,7 @@ class AceOnlineClient(ProcessReader):
     status_bar: StatusBar = None
     player: Player = None
 
+    engine: Engine = None
     inventory: Inventory = None
     last_update: datetime.datetime = None
     last_update_time_passed: float = None
@@ -36,6 +38,7 @@ class AceOnlineClient(ProcessReader):
         super(AceOnlineClient, self).__init__(pid)
         self.safe_read = safe_read
 
+        self.engine = Engine(self, update_on_create=False)
         self.gui = GUI(self, update_on_create=False)
         self.inventory = Inventory(self, update_on_create=False)
         self.mobs_list = MobsTree(self, update_on_create=False)
@@ -91,6 +94,7 @@ class AceOnlineClient(ProcessReader):
             self.psutil_process.suspend()
 
         try:
+            self.engine.update()
             self.gui.update()
             self.inventory.update()
             self.mobs_list.update()

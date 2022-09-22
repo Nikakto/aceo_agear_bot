@@ -30,11 +30,9 @@ BOT_ATTACK_IGNORE_TEMP_TIME_COUNTER: defaultdict[int, int] = defaultdict(int)
 BOT_ATTACK_IGNORE = ["Uruk", "NGC Research Probe"]
 BOT_ATTACK_MAX_AGRO = 100
 
-BOT_ENERGY_MIN_RATE = 1
-BOT_SHIELD_MIN_RATE = 0.75
-BOT_REMEDY_TIMEOUT: int = 10  # seconds
-BOT_REMEDY_MIN_RATE = 0.25
-BOT_SP_MIN_RATE = 0.5
+BOT_KIT_ENERGY_MIN_RATE = 1
+BOT_KIT_SHIELD_MIN_RATE = 0.75
+BOT_KIT_SP_MIN_RATE = 0.5
 
 BOT_TARGET_GAP = 20
 BOT_TICK_TIME = 0.1
@@ -43,7 +41,6 @@ KEY_SIEGE_MODE = "2"
 BOT_KEYBOARD_ENERGY_KIT = "7"
 BOT_KEYBOARD_SP_KIT = "6"
 BOT_KEYBOARD_SHIELD_KIT = "8"
-BOT_KEYBOARD_REMEDY = "5"
 BOT_KEYBOARD_BUFFS = {
     "Fire Shot": "9",
     "Concentration": "0",
@@ -151,6 +148,14 @@ def inventory_item_use(client: "AceOnlineClient", item: Item):
         client.update()
 
 
+def keyboard_conditional(client: "AceOnlineClient", key: str, condition: bool = False):
+    key_is_pressed = getattr(client.engine.keyboard, f"VK_{key}")
+    if condition and not key_is_pressed:
+        pydirectinput.keyDown(key, _pause=False)
+    elif key_is_pressed:
+        pydirectinput.keyUp(key, _pause=False)
+
+
 def _target_key(client: "AceOnlineClient", obj: "Object"):
     """
     Most important target will have the heaviest key
@@ -223,10 +228,6 @@ def run():
     win32gui.SetForegroundWindow(client.hwnd)
     time.sleep(1)
 
-    kit_energy_using = False
-    kit_shield_using = False
-    kit_sp_used_using = False
-    skill_remedy_timeout: datetime.datetime = datetime.datetime.min
     target_health_prev: float = 0
     target_prev: Optional[int] = None
     target_last_attack: Optional[datetime.datetime] = datetime.datetime.min
@@ -307,29 +308,17 @@ def run():
                 time.sleep(BOT_TICK_TIME)
                 continue
 
-            if client.player.energy_max * BOT_ENERGY_MIN_RATE < client.player.energy:
-                if kit_energy_using:
-                    pydirectinput.keyUp(BOT_KEYBOARD_ENERGY_KIT, _pause=False)
-                    kit_energy_using = False
-            elif not kit_energy_using:
-                pydirectinput.keyDown(BOT_KEYBOARD_ENERGY_KIT, _pause=False)
-                kit_energy_using = True
+            use_kit_sp = client.player.sp < client.player.sp_max * BOT_KIT_SP_MIN_RATE
+            keyboard_conditional(client, BOT_KEYBOARD_SP_KIT, use_kit_sp)
 
-            if client.player.shield_max * BOT_SHIELD_MIN_RATE < client.player.shield:
-                if kit_shield_using:
-                    pydirectinput.keyUp(BOT_KEYBOARD_SHIELD_KIT, _pause=False)
-                    kit_shield_using = False
-            elif not kit_shield_using:
-                pydirectinput.keyDown(BOT_KEYBOARD_SHIELD_KIT, _pause=False)
-                kit_shield_using = True
+            use_kit_energy = client.player.energy < client.player.energy_max * BOT_KIT_ENERGY_MIN_RATE
+            keyboard_conditional(client, BOT_KEYBOARD_ENERGY_KIT, use_kit_energy)
 
-            if client.player.sp_max * BOT_SP_MIN_RATE < client.player.sp:
-                if kit_sp_used_using:
-                    pydirectinput.keyUp(BOT_KEYBOARD_SP_KIT, _pause=False)
-                    kit_sp_used_using = False
-            elif not kit_sp_used_using:
-                pydirectinput.keyDown(BOT_KEYBOARD_SP_KIT, _pause=False)
-                kit_sp_used_using = True
+            use_kit_shield = client.player.shield < client.player.shield_max * BOT_KIT_SHIELD_MIN_RATE
+            keyboard_conditional(client, BOT_KEYBOARD_SHIELD_KIT, use_kit_shield)
+
+            for buff_name, key in BOT_KEYBOARD_BUFFS.items():
+                keyboard_conditional(client, key, not client.player.skills.get(buff_name).cooldown)
 
             if client.player.sp < 50:
                 print(datetime.datetime.now().isoformat(), f"Require sp. Stop")
@@ -343,20 +332,6 @@ def run():
 
                 time.sleep(BOT_TICK_TIME)
                 continue
-
-            buff_used = False
-            for buff, key in BOT_KEYBOARD_BUFFS.items():
-                if buff not in active_skills:
-                    client.send_keyboard(key)
-                    buff_used = True
-
-            can_use_remedy = skill_remedy_timeout <= datetime.datetime.now()
-            if client.player.shield < client.player.shield_max * BOT_REMEDY_MIN_RATE and can_use_remedy:
-                client.send_keyboard(BOT_KEYBOARD_REMEDY)
-                buff_used = True
-
-            if buff_used:
-                client.update()
 
             near_to_overheat = client.player.weapon_standard.overheat < 15 and (
                 client.player.target and client.player.weapon_standard.overheat * 2000 < client.player.target.health

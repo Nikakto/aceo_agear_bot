@@ -2,6 +2,7 @@ from typing import List
 from typing import Optional
 from typing import TYPE_CHECKING
 
+from aceo_bot.client.player.skills import SkillsTree
 from aceo_bot.client.structures import IngameStaticStructure
 from aceo_bot.client.structures import IngameStructure
 
@@ -95,6 +96,7 @@ class Player(IngameStaticStructure, Object):
     energy_max: int = 0
     shield: float = 0
     shield_max: int = 0
+    skills: Optional[SkillsTree] = None
     sp: int = 0
     sp_max: int = 0
     target: Optional["Object"] = None
@@ -121,6 +123,10 @@ class Player(IngameStaticStructure, Object):
             self.sp_max = self.get_data_int16(self.data, 0x9A4, signed=True)
             self.weapon_advanced_reload_time = self.get_data_float(self.data, 0x238) or None
             self.weapon_standard_is_shooting = self.get_data_byte_bool(self.data, 0xC3C)
+
+            if skills_tree_address := self.get_data_int32(self.data, 0x12E0):
+                if skills_tree_root_address := self.client.read_int32(skills_tree_address + 0x08):
+                    self.skills = SkillsTree(self.client, skills_tree_root_address, update_on_create=True)
 
             if target_address := self.get_data_int32(self.data, 0xB44):
                 self.target = Object(self.client, target_address, update_on_create=True)
