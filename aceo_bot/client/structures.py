@@ -118,6 +118,9 @@ class IngameTree(IngameStructure):
         self.items = []
         super(IngameTree, self).__init__(client, address, update_on_create=update_on_create)
 
+    def __iter__(self):
+        return iter(self.items)
+
     def get_address_tree_node_end(self) -> Optional[int]:
         module_name, offset = self.address_tree_node_end_offsets
         pointer_tree_node_end = IngameStaticStructure.get_module_address(self.client, module_name) + offset
